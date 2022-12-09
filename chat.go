@@ -8,13 +8,45 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Chat struct {
-	client *http.Client
-	token  string
-	cid    uuid.UUID
-	pid    uuid.UUID
+	client       *http.Client
+	sessionToken string
+	session      *Session
+	cid          uuid.UUID
+	pid          uuid.UUID
+}
+
+func (ctx *Chat) RefreshJWT() error {
+	if !ctx.session.IsInvalid() {
+		return nil
+	}
+	req, err := http.NewRequest("GET", "https://chat.openai.com/api/auth/session", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:107.0) Gecko/20100101 Firefox/107.0")
+	req.Header.Add("Cookie", "__Secure-next-auth.session-token="+ctx.sessionToken)
+	resp, err := ctx.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if err = json.NewDecoder(resp.Body).Decode(&ctx.session); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ctx *Chat) AutoRefreshJWT() {
+	go func() {
+		for {
+			ctx.RefreshJWT()
+			time.Sleep(time.Second)
+		}
+	}()
 }
 
 func (ctx *Chat) Send(word string) (*Response, error) {
@@ -22,6 +54,9 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 		cid *uuid.UUID
 		pid *uuid.UUID
 	)
+	if err := ctx.RefreshJWT(); err != nil {
+		return nil, err
+	}
 	if ctx.cid != uuid.Nil {
 		cid = &ctx.cid
 	}
@@ -42,6 +77,9 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 
 func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error) {
 	var chatResponse *Response
+	if err := ctx.RefreshJWT(); err != nil {
+		return nil, err
+	}
 	chatRequest := NewRequest(word, cid, pid)
 	requestBytes, err := json.Marshal(chatRequest)
 	if err != nil {
@@ -52,7 +90,7 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 		return nil, err
 	}
 	req.Header.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:107.0) Gecko/20100101 Firefox/107.0")
-	req.Header.Add("Authorization", "Bearer "+ctx.token)
+	req.Header.Add("Authorization", "Bearer "+ctx.session.AccessToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := ctx.client.Do(req)
 	if err != nil {
@@ -78,6 +116,8 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 	return chatResponse, nil
 }
 
-func NewChat(token string) *Chat {
-	return &Chat{token: token, client: &http.Client{}}
+func NewChat(sessionToken string) *Chat {
+	chat := &Chat{client: &http.Client{}, sessionToken: sessionToken, session: &Session{}}
+	chat.AutoRefreshJWT()
+	return chat
 }
