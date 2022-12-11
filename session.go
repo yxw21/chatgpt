@@ -13,6 +13,7 @@ type User struct {
 
 type Session struct {
 	AccessToken string `json:"accessToken"`
+	Error       string `json:"error"`
 }
 
 func (ctx *Session) Expires() time.Time {

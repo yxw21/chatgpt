@@ -13,16 +13,15 @@ import (
 
 type Chat struct {
 	client       *http.Client
+	username     string
+	password     string
 	sessionToken string
 	session      *Session
 	cid          uuid.UUID
 	pid          uuid.UUID
 }
 
-func (ctx *Chat) RefreshJWT() error {
-	if !ctx.session.IsInvalid() {
-		return nil
-	}
+func (ctx *Chat) RefreshSession() error {
 	req, err := http.NewRequest("GET", "https://chat.openai.com/api/auth/session", nil)
 	if err != nil {
 		return err
@@ -40,10 +39,31 @@ func (ctx *Chat) RefreshJWT() error {
 	return nil
 }
 
-func (ctx *Chat) AutoRefreshJWT() {
+func (ctx *Chat) CheckRefreshSession() error {
+	if !ctx.session.IsInvalid() {
+		return nil
+	}
+	if ctx.username != "" && ctx.password != "" {
+		openai := NewOpenAI(ctx.username, ctx.password)
+		sessionToken, err := openai.GetSessionToken()
+		if err != nil {
+			return err
+		}
+		ctx.sessionToken = sessionToken
+	}
+	if err := ctx.RefreshSession(); err != nil {
+		return err
+	}
+	if ctx.session.Error != "" {
+		return errors.New(ctx.session.Error)
+	}
+	return nil
+}
+
+func (ctx *Chat) AutoRefreshSession() {
 	go func() {
 		for {
-			ctx.RefreshJWT()
+			ctx.CheckRefreshSession()
 			time.Sleep(time.Second)
 		}
 	}()
@@ -54,7 +74,7 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 		cid *uuid.UUID
 		pid *uuid.UUID
 	)
-	if err := ctx.RefreshJWT(); err != nil {
+	if err := ctx.CheckRefreshSession(); err != nil {
 		return nil, err
 	}
 	if ctx.cid != uuid.Nil {
@@ -77,7 +97,7 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 
 func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error) {
 	var chatResponse *Response
-	if err := ctx.RefreshJWT(); err != nil {
+	if err := ctx.CheckRefreshSession(); err != nil {
 		return nil, err
 	}
 	chatRequest := NewRequest(word, cid, pid)
@@ -116,8 +136,14 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 	return chatResponse, nil
 }
 
-func NewChat(sessionToken string) *Chat {
+func NewChat(username, password string) *Chat {
+	chat := &Chat{client: &http.Client{}, username: username, password: password, session: &Session{}}
+	chat.AutoRefreshSession()
+	return chat
+}
+
+func NewChatWithSessionToken(sessionToken string) *Chat {
 	chat := &Chat{client: &http.Client{}, sessionToken: sessionToken, session: &Session{}}
-	chat.AutoRefreshJWT()
+	chat.AutoRefreshSession()
 	return chat
 }
