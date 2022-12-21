@@ -1,6 +1,38 @@
 # Dependency
 - Linux needs to install `xvfb`
+
+On Ubuntu or Debian
+```
+apt update
+apt install xvfb
+```
+On CentOS
+```
+yum update
+yum install xorg-x11-server-Xvfb
+```
 - You need a key to crack the verification code, you can go to the website `nopecha.com` to register, it is very cheap.
+
+```
+https://nopecha.com
+```
+- chrome
+
+On Ubuntu or Debian
+```
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+apt install ./google-chrome-stable_current_amd64.deb
+```
+On CentOS
+```
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
+yum localinstall -y google-chrome-stable_current_x86_64.rpm
+Copy to clipboardErrorCopied
+```
+On Alpine
+```
+apk add chromium
+```
 
 # Login
 1. username and password
