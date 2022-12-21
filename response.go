@@ -28,3 +28,9 @@ type Response struct {
 	ConversationId uuid.UUID  `json:"conversation_id"`
 	Error          any        `json:"error"`
 }
+
+type Release struct {
+	Assets []struct {
+		BrowserDownloadUrl string `json:"browser_download_url"`
+	} `json:"assets"`
+}

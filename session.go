@@ -33,5 +33,5 @@ func (ctx *Session) Expires() time.Time {
 }
 
 func (ctx *Session) IsInvalid() bool {
-	return ctx.AccessToken == "" || time.Now().Unix() >= ctx.Expires().Unix()
+	return ctx.AccessToken == "" || (time.Now().Unix()+60) >= ctx.Expires().Unix()
 }

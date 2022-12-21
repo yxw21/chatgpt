@@ -1,11 +1,6 @@
-# openai升级了安全策略
-- 使用cloudflare保护chatgpt
-- 用户名密码登录需要谷歌验证码(无法绕过)
-- 聊天加入了请求限制(请求限制太死，可参考官网)
-
-等后续官方API吧
-
-<del>
+# Dependency
+- Linux needs to install `xvfb`
+- You need a key to crack the verification code, you can go to the website `nopecha.com` to register, it is very cheap.
 
 # Login
 1. username and password
@@ -14,11 +9,12 @@ package main
 
 import (
 	"fmt"
+	"time"
 	"github.com/yxw21/chatgpt"
 )
 
 func main() {
-	chat := chatgpt.NewChat("username", "password")
+	chat := chatgpt.NewChat("username", "password", "key")
 	res, err := chat.Send("hi")
 	if err != nil {
 		fmt.Println(err)

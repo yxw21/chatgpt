@@ -1,171 +1,161 @@
 package chatgpt
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
+	"github.com/Davincible/chromedp-undetected"
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
+	"github.com/mholt/archiver/v3"
 	"net/http"
-	"net/http/cookiejar"
-	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 type OpenAI struct {
-	client   *http.Client
-	Username string
-	Password string
+	username string
+	password string
+	key      string
 }
 
-func (ctx *OpenAI) getStateFromHeader(header http.Header) string {
-	location := header.Get("Location")
-	sli := strings.Split(location, "=")
-	if len(sli) < 2 {
-		return ""
-	}
-	return sli[1]
+func (ctx *OpenAI) waitResolveCapture() chromedp.EmulateAction {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Minute)
+		defer cancel()
+		for {
+			select {
+			case <-ctxWithTimeout.Done():
+				return ctxWithTimeout.Err()
+			default:
+				var value string
+				chromedp.Value("#g-recaptcha-response", &value).Do(ctx)
+				if value != "" {
+					return nil
+				}
+			}
+			time.Sleep(time.Second)
+		}
+	})
 }
 
-func (ctx *OpenAI) request(method, url string, header map[string]string, body io.Reader) (http.Header, []byte, error) {
-	req, err := http.NewRequest(method, url, body)
+func (ctx *OpenAI) waitCookie(token *string) chromedp.EmulateAction {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Minute)
+		defer cancel()
+		for {
+			select {
+			case <-ctxWithTimeout.Done():
+				return ctxWithTimeout.Err()
+			default:
+				cookies, err := network.GetCookies().Do(ctx)
+				if err != nil {
+					return err
+				}
+				for _, cookie := range cookies {
+					if cookie.Name == "__Secure-next-auth.session-token" && cookie.Domain == "chat.openai.com" {
+						*token = cookie.Value
+						return nil
+					}
+				}
+			}
+			time.Sleep(time.Second)
+		}
+	})
+}
+
+func (ctx *OpenAI) setExtension() (string, error) {
+	var release []Release
+	resp, err := http.Get("https://api.github.com/repos/yxw21/nopecha-extension/releases")
 	if err != nil {
-		return nil, nil, err
+		return "", err
 	}
-	for key, value := range header {
-		req.Header.Set(key, value)
+	if err = json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:107.0) Gecko/20100101 Firefox/107.0")
-	resp, err := ctx.client.Do(req)
+	resp.Body.Close()
+	downloadUrl := release[0].Assets[0].BrowserDownloadUrl
+	resp, err = http.Get(downloadUrl)
 	if err != nil {
-		return nil, nil, err
+		return "", err
 	}
 	defer resp.Body.Close()
-	contentBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
+	buf := new(bytes.Buffer)
+	if _, err = buf.ReadFrom(bufio.NewReader(resp.Body)); err != nil {
+		return "", err
 	}
-	return resp.Header, contentBytes, nil
+	dirname, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	separator := string(filepath.Separator)
+	tmp := os.TempDir()
+	if !strings.HasSuffix(tmp, separator) {
+		tmp += separator
+	}
+	if !strings.HasSuffix(dirname, separator) {
+		dirname += separator
+	}
+	gz := tmp + "dist.tar.gz"
+	dest := dirname
+	dist := dest + "dist" + separator
+	background := dist + fmt.Sprintf("chrome%sbackground.js", separator)
+	if err = os.WriteFile(gz, buf.Bytes(), 0777); err != nil {
+		return "", err
+	}
+	_ = os.RemoveAll(dist)
+	if err = archiver.Unarchive(gz, dest); err != nil {
+		return "", err
+	}
+	contentBytes, err := os.ReadFile(background)
+	if err != nil {
+		return "", err
+	}
+	addBytes := []byte(fmt.Sprintf(`Settings.set({id: "key", value: "%s"});`, ctx.key))
+	contentBytes = append(contentBytes, addBytes...)
+	err = os.WriteFile(background, contentBytes, 0777)
+	return dist, err
 }
 
-func (ctx *OpenAI) getAuthorizeUrl() (string, error) {
-	var m = make(map[string]any)
-	_, data, err := ctx.request("POST", "https://chat.openai.com/api/auth/signin/auth0?prompt=login", map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	}, bytes.NewBufferString("callbackUrl=%2F&csrfToken=c9fc955397dc53bad7ea1025ac2d57647059ec13c1d73da3dd5b8fa1552bb82b&json=true"))
+func (ctx *OpenAI) GetToken() (string, error) {
+	var token string
+	dist, err := ctx.setExtension()
 	if err != nil {
-		return "", err
+		return token, err
 	}
-	if err = json.Unmarshal(data, &m); err != nil {
-		return "", err
+	chromeCtx, cancel, err := chromedpundetected.New(chromedpundetected.NewConfig(
+		chromedpundetected.WithHeadless(),
+		chromedpundetected.WithTimeout(5*time.Minute),
+		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-extensions-except", dist+"chrome")),
+	))
+	if err != nil {
+		return token, err
 	}
-	if u, ok := m["url"].(string); ok {
-		return u, nil
+	defer cancel()
+	if err = chromedp.Run(chromeCtx,
+		chromedp.Navigate("https://chat.openai.com/auth/login"),
+		chromedp.WaitVisible(".btn:nth-child(1)"),
+		chromedp.Click(".btn:nth-child(1)"),
+		chromedp.WaitVisible("#username"),
+		chromedp.SetValue("#username", ctx.username),
+		ctx.waitResolveCapture(),
+		chromedp.Sleep(time.Second),
+		chromedp.Click("button[type='submit']"),
+		chromedp.WaitVisible("#password"),
+		chromedp.SetValue("#password", ctx.password),
+		chromedp.WaitVisible("button[type='submit']"),
+		chromedp.Click("button[type='submit']"),
+		ctx.waitCookie(&token),
+	); err != nil {
+		return token, err
 	}
-	return "", errors.New("getAuthorizeUrl error")
+	return token, nil
 }
 
-func (ctx *OpenAI) getIdentifierState(authorizeUrl string) (string, error) {
-	header, _, err := ctx.request("GET", authorizeUrl, nil, nil)
-	if err != nil {
-		return "", err
-	}
-	state := ctx.getStateFromHeader(header)
-	if state == "" {
-		return "", errors.New("getStateFromHeader error")
-	}
-	return state, nil
-}
-
-func (ctx *OpenAI) getPasswordState(identifierState string) (string, error) {
-	header, _, err := ctx.request("POST", "https://auth0.openai.com/u/login/identifier?state="+identifierState, map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	}, bytes.NewBufferString(fmt.Sprintf("username=%s&js-available=true&webauthn-available=true&is-brave=false&webauthn-platform-available=false&action=default&state=%s", ctx.Username, identifierState)))
-	if err != nil {
-		return "", err
-	}
-	state := ctx.getStateFromHeader(header)
-	if state == "" {
-		return "", errors.New("getStateFromHeader error")
-	}
-	return state, nil
-}
-
-func (ctx *OpenAI) getResumeState(passwordState string) (string, error) {
-	header, _, err := ctx.request("POST", "https://auth0.openai.com/u/login/password?state="+passwordState, map[string]string{
-		"Content-Type": "application/x-www-form-urlencoded",
-	}, bytes.NewBufferString(fmt.Sprintf("username=%s&password=%s&action=default&state=%s", ctx.Username, ctx.Password, passwordState)))
-	if err != nil {
-		return "", err
-	}
-	state := ctx.getStateFromHeader(header)
-	if state == "" {
-		return "", errors.New("getStateFromHeader error")
-	}
-	return state, nil
-}
-
-func (ctx *OpenAI) getResumeLocation(resumeState string) (string, error) {
-	header, _, err := ctx.request("GET", "https://auth0.openai.com/authorize/resume?state="+resumeState, nil, nil)
-	if err != nil {
-		return "", err
-	}
-	location := header.Get("Location")
-	if location == "" {
-		return "", errors.New("getResumeLocation error")
-	}
-	return location, nil
-}
-
-func (ctx *OpenAI) GetSessionToken() (string, error) {
-	authorizeUrl, err := ctx.getAuthorizeUrl()
-	if err != nil {
-		return "", err
-	}
-	identifierState, err := ctx.getIdentifierState(authorizeUrl)
-	if err != nil {
-		return "", err
-	}
-	passwordState, err := ctx.getPasswordState(identifierState)
-	if err != nil {
-		return "", err
-	}
-	resumeState, err := ctx.getResumeState(passwordState)
-	if err != nil {
-		return "", err
-	}
-	location, err := ctx.getResumeLocation(resumeState)
-	if err != nil {
-		return "", err
-	}
-	_, _, err = ctx.request("GET", location, nil, nil)
-	if err != nil {
-		return "", err
-	}
-	cookies := ctx.client.Jar.Cookies(&url.URL{Scheme: "https", Host: "chat.openai.com"})
-	for _, cookie := range cookies {
-		if cookie.Name == "__Secure-next-auth.session-token" {
-			return cookie.Value, nil
-		}
-	}
-	return "", errors.New("not found __Secure-next-auth.session-token")
-}
-
-func NewOpenAI(username, password string) *OpenAI {
-	jar, _ := cookiejar.New(nil)
-	jar.SetCookies(&url.URL{Scheme: "https", Host: "chat.openai.com"}, []*http.Cookie{
-		{Name: "__Host-next-auth.csrf-token", Value: "c9fc955397dc53bad7ea1025ac2d57647059ec13c1d73da3dd5b8fa1552bb82b%7C29dede65e8c76988e6ca0818cef992dcf2bfb5e008e6845d17c0e22361b1579e"},
-		{Name: " __Secure-next-auth.callback-url", Value: "https%3A%2F%2Fchat.openai.com%2F"},
-	})
-	client := &http.Client{
-		Jar: jar,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	return &OpenAI{
-		client:   client,
-		Username: username,
-		Password: password,
-	}
+func NewOpenAI(username, password, key string) *OpenAI {
+	return &OpenAI{username: username, password: password, key: key}
 }
