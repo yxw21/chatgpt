@@ -27,7 +27,6 @@ On CentOS
 ```
 wget https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
 yum localinstall -y google-chrome-stable_current_x86_64.rpm
-Copy to clipboardErrorCopied
 ```
 On Alpine
 ```
