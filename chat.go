@@ -6,7 +6,7 @@ import (
 	"errors"
 	"github.com/satori/go.uuid"
 	"github.com/yxw21/chatgpt/session"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -18,10 +18,14 @@ type Chat struct {
 	pid     uuid.UUID
 }
 
-func (ctx *Chat) checkSession() {
+func (ctx *Chat) check() error {
 	if ctx.session.IsInvalid() {
-		ctx.session.RefreshToken()
+		return ctx.session.RefreshToken()
 	}
+	if ctx.session.GetClearance() == "" {
+		return ctx.session.RefreshClearance()
+	}
+	return nil
 }
 
 func (ctx *Chat) Send(word string) (*Response, error) {
@@ -29,7 +33,9 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 		cid *uuid.UUID
 		pid *uuid.UUID
 	)
-	ctx.checkSession()
+	if err := ctx.check(); err != nil {
+		return nil, err
+	}
 	if ctx.cid != uuid.Nil {
 		cid = &ctx.cid
 	}
@@ -50,7 +56,9 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 
 func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error) {
 	var chatResponse *Response
-	ctx.checkSession()
+	if err := ctx.check(); err != nil {
+		return nil, err
+	}
 	chatRequest := NewRequest(word, cid, pid)
 	requestBytes, err := json.Marshal(chatRequest)
 	if err != nil {
@@ -69,7 +77,7 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 		return nil, err
 	}
 	defer resp.Body.Close()
-	responseBytes, err := ioutil.ReadAll(resp.Body)
+	responseBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

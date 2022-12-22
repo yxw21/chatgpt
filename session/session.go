@@ -53,18 +53,20 @@ func (ctx *Session) IsInvalid() bool {
 	return (time.Now().Unix() + 60) >= time.Unix(user.Exp, 0).Unix()
 }
 
-func (ctx *Session) RefreshToken() {
+func (ctx *Session) RefreshToken() error {
 	if ctx.username != "" && ctx.password != "" && ctx.key != "" {
 		data, err := chatgpt.NewOpenAI(ctx.username, ctx.password, ctx.key).GetData()
-		if err == nil {
-			ctx.accessToken = data.AccessToken
-			ctx.clearance = data.Clearance
-			ctx.useragent = data.Useragent
+		if err != nil {
+			return err
 		}
+		ctx.accessToken = data.AccessToken
+		ctx.clearance = data.Clearance
+		ctx.useragent = data.Useragent
 	}
+	return nil
 }
 
-func (ctx *Session) refreshClearance() {
+func (ctx *Session) RefreshClearance() error {
 	var (
 		cookies []*network.Cookie
 		err     error
@@ -74,7 +76,7 @@ func (ctx *Session) refreshClearance() {
 		chromedpundetected.WithTimeout(20*time.Second),
 	))
 	if err != nil {
-		return
+		return err
 	}
 	defer cancel()
 	if err = chromedp.Run(chromeContext,
@@ -95,15 +97,15 @@ func (ctx *Session) refreshClearance() {
 			return nil
 		}),
 	); err != nil {
-		return
+		return err
 	}
-	return
+	return nil
 }
 
 func (ctx *Session) autoRefreshToken() {
 	for {
 		if ctx.IsInvalid() {
-			ctx.RefreshToken()
+			_ = ctx.RefreshToken()
 		}
 		time.Sleep(time.Second * 10)
 	}
@@ -111,7 +113,7 @@ func (ctx *Session) autoRefreshToken() {
 
 func (ctx *Session) autoRefreshClearance() {
 	for {
-		ctx.refreshClearance()
+		_ = ctx.RefreshClearance()
 		rand.Seed(time.Now().UnixNano())
 		t := time.Duration(rand.Intn(300) + 60)
 		time.Sleep(t * time.Second)

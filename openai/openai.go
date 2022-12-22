@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Davincible/chromedp-undetected"
 	"github.com/chromedp/cdproto/network"
@@ -70,30 +71,12 @@ func (ctx *OpenAI) setClearance(clearance *string) chromedp.EmulateAction {
 
 func (ctx *OpenAI) setExtension() (string, error) {
 	var release []Release
-	resp, err := http.Get("https://api.github.com/repos/yxw21/nopecha-extension/releases")
-	if err != nil {
-		return "", err
-	}
-	if err = json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return "", err
-	}
-	resp.Body.Close()
-	downloadUrl := release[0].Assets[0].BrowserDownloadUrl
-	resp, err = http.Get(downloadUrl)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	buf := new(bytes.Buffer)
-	if _, err = buf.ReadFrom(bufio.NewReader(resp.Body)); err != nil {
-		return "", err
-	}
-	dirname, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
 	separator := string(filepath.Separator)
 	tmp := os.TempDir()
+	dirname, err := os.UserHomeDir()
+	if err != nil {
+		return "", errors.New("get user home dir error: " + err.Error())
+	}
 	if !strings.HasSuffix(tmp, separator) {
 		tmp += separator
 	}
@@ -104,21 +87,43 @@ func (ctx *OpenAI) setExtension() (string, error) {
 	dest := dirname
 	dist := dest + "dist" + separator
 	background := dist + fmt.Sprintf("chrome%sbackground.js", separator)
+	_, err = os.Stat(dist)
+	if err == nil {
+		return dist, nil
+	}
+	resp, err := http.Get("https://api.github.com/repos/yxw21/nopecha-extension/releases")
+	if err != nil {
+		return "", errors.New("getting nopecha-extension release error: " + err.Error())
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", errors.New("github json decode error: " + err.Error())
+	}
+	resp.Body.Close()
+	downloadUrl := release[0].Assets[0].BrowserDownloadUrl
+	resp, err = http.Get(downloadUrl)
+	if err != nil {
+		return "", errors.New("download nopecha-extension error: " + err.Error())
+	}
+	defer resp.Body.Close()
+	buf := new(bytes.Buffer)
+	if _, err = buf.ReadFrom(bufio.NewReader(resp.Body)); err != nil {
+		return "", errors.New("error reading buffer from response content: " + err.Error())
+	}
 	if err = os.WriteFile(gz, buf.Bytes(), 0777); err != nil {
-		return "", err
+		return "", errors.New("error writing extension to temporary directory: " + err.Error())
 	}
 	_ = os.RemoveAll(dist)
 	if err = archiver.Unarchive(gz, dest); err != nil {
-		return "", err
+		return "", errors.New("error unpacking extension: " + err.Error())
 	}
 	contentBytes, err := os.ReadFile(background)
 	if err != nil {
-		return "", err
+		return "", errors.New("error reading js file: " + err.Error())
 	}
 	addBytes := []byte(fmt.Sprintf(`Settings.set({id: "key", value: "%s"});`, ctx.key))
 	contentBytes = append(contentBytes, addBytes...)
 	err = os.WriteFile(background, contentBytes, 0777)
-	return dist, err
+	return dist, errors.New("error updating js file: " + err.Error())
 }
 
 func (ctx *OpenAI) GetData() (*Data, error) {
@@ -133,7 +138,7 @@ func (ctx *OpenAI) GetData() (*Data, error) {
 		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-extensions-except", dist+"chrome")),
 	))
 	if err != nil {
-		return data, err
+		return data, errors.New("error starting chrome: " + err.Error())
 	}
 	defer cancel()
 	if err = chromedp.Run(chromeCtx,
@@ -155,7 +160,7 @@ func (ctx *OpenAI) GetData() (*Data, error) {
 		chromedp.EvaluateAsDevTools(`navigator.userAgent`, &data.Useragent),
 		chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &data.AccessToken),
 	); err != nil {
-		return data, err
+		return data, errors.New("get data error: " + err.Error())
 	}
 	return data, nil
 }
