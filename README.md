@@ -43,10 +43,11 @@ package main
 import (
 	"fmt"
 	"github.com/yxw21/chatgpt"
+	session "github.com/yxw21/chatgpt/session"
 )
 
 func main() {
-	chat := chatgpt.NewChat(chatgpt.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh())
+	chat := chatgpt.NewChat(session.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh())
 	res, err := chat.Send("hi")
 	if err != nil {
 		fmt.Println(err)
@@ -62,10 +63,11 @@ package main
 import (
 	"fmt"
 	"github.com/yxw21/chatgpt"
+	session "github.com/yxw21/chatgpt/session"
 )
 
 func main() {
-	chat := chatgpt.NewChat(chatgpt.NewSessionWithAccessToken("{access token}"))
+	chat := chatgpt.NewChat(session.NewSessionWithAccessToken("{access token}"))
 	res, err := chat.Send("hi")
 	if err != nil {
 		fmt.Println(err)
