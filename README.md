@@ -75,3 +75,5 @@ func main() {
 }
 ```
 # Access token (expires in about a day)
+
+https://chat.openai.com/api/auth/session
