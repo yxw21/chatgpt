@@ -34,7 +34,7 @@ func (ctx *OpenAI) waitResolveCapture() chromedp.EmulateAction {
 				return ctxWithTimeout.Err()
 			default:
 				var value string
-				chromedp.Value("#g-recaptcha-response", &value).Do(ctx)
+				_ = chromedp.Value("#g-recaptcha-response", &value).Do(ctx)
 				if value != "" {
 					return nil
 				}
@@ -123,7 +123,10 @@ func (ctx *OpenAI) setExtension() (string, error) {
 	addBytes := []byte(fmt.Sprintf(`Settings.set({id: "key", value: "%s"});`, ctx.key))
 	contentBytes = append(contentBytes, addBytes...)
 	err = os.WriteFile(background, contentBytes, 0777)
-	return dist, errors.New("error updating js file: " + err.Error())
+	if err != nil {
+		return dist, errors.New("error updating js file: " + err.Error())
+	}
+	return dist, nil
 }
 
 func (ctx *OpenAI) GetData() (*Data, error) {

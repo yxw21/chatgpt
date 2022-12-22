@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"github.com/Davincible/chromedp-undetected"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -76,7 +77,7 @@ func (ctx *Session) RefreshClearance() error {
 		chromedpundetected.WithTimeout(20*time.Second),
 	))
 	if err != nil {
-		return err
+		return errors.New("error starting chrome _: " + err.Error())
 	}
 	defer cancel()
 	if err = chromedp.Run(chromeContext,
@@ -97,7 +98,7 @@ func (ctx *Session) RefreshClearance() error {
 			return nil
 		}),
 	); err != nil {
-		return err
+		return errors.New("refresh clearance error: " + err.Error())
 	}
 	return nil
 }
