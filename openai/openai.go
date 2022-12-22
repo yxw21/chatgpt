@@ -43,7 +43,7 @@ func (ctx *OpenAI) waitResolveCapture() chromedp.EmulateAction {
 	})
 }
 
-func (ctx *OpenAI) waitCookie(token *string) chromedp.EmulateAction {
+func (ctx *OpenAI) setClearance(clearance *string) chromedp.EmulateAction {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Minute)
 		defer cancel()
@@ -57,8 +57,8 @@ func (ctx *OpenAI) waitCookie(token *string) chromedp.EmulateAction {
 					return err
 				}
 				for _, cookie := range cookies {
-					if cookie.Name == "__Secure-next-auth.session-token" && cookie.Domain == "chat.openai.com" {
-						*token = cookie.Value
+					if cookie.Name == "cf_clearance" && cookie.Domain == ".chat.openai.com" {
+						*clearance = cookie.Value
 						return nil
 					}
 				}
@@ -121,11 +121,11 @@ func (ctx *OpenAI) setExtension() (string, error) {
 	return dist, err
 }
 
-func (ctx *OpenAI) GetToken() (string, error) {
-	var token string
+func (ctx *OpenAI) GetData() (*Data, error) {
+	var data = &Data{}
 	dist, err := ctx.setExtension()
 	if err != nil {
-		return token, err
+		return data, err
 	}
 	chromeCtx, cancel, err := chromedpundetected.New(chromedpundetected.NewConfig(
 		chromedpundetected.WithHeadless(),
@@ -133,7 +133,7 @@ func (ctx *OpenAI) GetToken() (string, error) {
 		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-extensions-except", dist+"chrome")),
 	))
 	if err != nil {
-		return token, err
+		return data, err
 	}
 	defer cancel()
 	if err = chromedp.Run(chromeCtx,
@@ -149,11 +149,15 @@ func (ctx *OpenAI) GetToken() (string, error) {
 		chromedp.SetValue("#password", ctx.password),
 		chromedp.WaitVisible("button[type='submit']"),
 		chromedp.Click("button[type='submit']"),
-		ctx.waitCookie(&token),
+		ctx.setClearance(&data.Clearance),
+		chromedp.Navigate("https://chat.openai.com/api/auth/session"),
+		chromedp.WaitVisible("pre"),
+		chromedp.EvaluateAsDevTools(`navigator.userAgent`, &data.Useragent),
+		chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &data.AccessToken),
 	); err != nil {
-		return token, err
+		return data, err
 	}
-	return token, nil
+	return data, nil
 }
 
 func NewOpenAI(username, password, key string) *OpenAI {
