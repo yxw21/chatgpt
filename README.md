@@ -67,7 +67,7 @@ import (
 )
 
 func main() {
-	chat := chatgpt.NewChat(session.NewSessionWithAccessToken("{access token}"))
+	chat := chatgpt.NewChat(session.NewSessionWithAccessToken("{access token}").AutoRefresh())
 	res, err := chat.Send("hi")
 	if err != nil {
 		fmt.Println(err)
