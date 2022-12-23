@@ -12,6 +12,11 @@ On CentOS
 yum update
 yum install xorg-x11-server-Xvfb
 ```
+On Alpine
+```
+apk update
+apk add xvfb
+```
 ### Key
 You need a key to crack the verification code, you can go to the website `nopecha.com` to register, it is very cheap.
 
