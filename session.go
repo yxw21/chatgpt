@@ -1,26 +1,25 @@
 package chatgpt
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/Davincible/chromedp-undetected"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
-	"github.com/yxw21/chatgpt/openai"
 	"strings"
 	"time"
 )
 
+const cfExpire = 120 * time.Minute
+
 type Session struct {
-	username    string
-	password    string
-	key         string
-	accessToken string
-	clearance   string
-	cfTime      int64
-	useragent   string
+	username         string
+	password         string
+	key              string
+	accessToken      string
+	clearance        string
+	useragent        string
+	clearanceCreated int64
 }
 
 func (ctx *Session) GetAccessToken() string {
@@ -35,7 +34,7 @@ func (ctx *Session) GetUserAgent() string {
 	return ctx.useragent
 }
 
-func (ctx *Session) IsInvalid() bool {
+func (ctx *Session) AccessTokenIsInvalid() bool {
 	var user User
 	if ctx.accessToken == "" {
 		return true
@@ -55,25 +54,29 @@ func (ctx *Session) IsInvalid() bool {
 	return (time.Now().Unix() + 300) >= time.Unix(user.Exp, 0).Unix()
 }
 
+func (ctx *Session) ClearanceIsInValid() bool {
+	now := time.Now().Unix()
+	val := now - ctx.clearanceCreated
+	// Refresh token 10 minutes in advance ()
+	t := cfExpire - (10 * time.Minute)
+	return val > int64(t.Seconds())
+}
+
 func (ctx *Session) RefreshToken() error {
 	if ctx.username != "" && ctx.password != "" && ctx.key != "" {
-		data, err := chatgpt.NewOpenAI(ctx.username, ctx.password, ctx.key).GetData()
+		passport, err := NewOpenAI(ctx.username, ctx.password, ctx.key).GetPassport()
 		if err != nil {
 			return err
 		}
-		ctx.accessToken = data.AccessToken
-		ctx.clearance = data.Clearance
-		ctx.useragent = data.Useragent
-		ctx.cfTime = time.Now().Unix()
+		ctx.accessToken = passport.AccessToken
+		ctx.clearance = passport.Clearance
+		ctx.useragent = passport.Useragent
+		ctx.clearanceCreated = time.Now().Unix()
 	}
 	return nil
 }
 
 func (ctx *Session) RefreshClearance() error {
-	var (
-		cookies []*network.Cookie
-		err     error
-	)
 	chromeContext, cancel, err := chromedpundetected.New(chromedpundetected.NewConfig(
 		chromedpundetected.WithHeadless(),
 		chromedpundetected.WithTimeout(20*time.Second),
@@ -84,54 +87,29 @@ func (ctx *Session) RefreshClearance() error {
 	defer cancel()
 	if err = chromedp.Run(chromeContext,
 		chromedp.Navigate("https://chat.openai.com/auth/login"),
-		chromedp.WaitVisible(`//div[@id="__next"]`),
+		waitElement(".btn:nth-child(1)", time.Minute),
 		chromedp.Evaluate(`navigator.userAgent`, &ctx.useragent),
-		chromedp.ActionFunc(func(browserCtx context.Context) error {
-			cookies, err = network.GetAllCookies().Do(browserCtx)
-			if err != nil {
-				return errors.New("error getting cookie (cf): " + err.Error())
-			}
-			for _, cookie := range cookies {
-				if cookie.Name == "cf_clearance" && cookie.Domain == ".chat.openai.com" {
-					ctx.clearance = cookie.Value
-					ctx.cfTime = time.Now().Unix()
-					break
-				}
-			}
-			return nil
-		}),
+		setClearance(&ctx.clearance),
 	); err != nil {
 		return errors.New("error refreshing clearance: " + err.Error())
 	}
+	ctx.clearanceCreated = time.Now().Unix()
 	return nil
 }
 
-func (ctx *Session) autoRefreshToken() {
-	for {
-		if ctx.IsInvalid() {
-			_ = ctx.RefreshToken()
-		}
-		time.Sleep(time.Second * 10)
-	}
-}
-
-func (ctx *Session) autoRefreshClearance() {
-	for {
-		now := time.Now().Unix()
-		val := now - ctx.cfTime
-		// https://support.cloudflare.com/hc/en-us/articles/360038470312#4C6RjJMNCGMUpBYm0vCYj1
-		// Refresh token 3 minutes in advance ()
-		t := (30 * time.Minute) - (3 * time.Minute)
-		if val > int64(t) {
-			_ = ctx.RefreshClearance()
-		}
-		time.Sleep(time.Second * 10)
-	}
-}
-
 func (ctx *Session) AutoRefresh() *Session {
-	go ctx.autoRefreshToken()
-	go ctx.autoRefreshClearance()
+	go func() {
+		for {
+			if ctx.AccessTokenIsInvalid() {
+				_ = ctx.RefreshToken()
+			} else {
+				if ctx.ClearanceIsInValid() {
+					_ = ctx.RefreshClearance()
+				}
+			}
+			time.Sleep(time.Second * 10)
+		}
+	}()
 	return ctx
 }
 

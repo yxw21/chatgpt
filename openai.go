@@ -8,13 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Davincible/chromedp-undetected"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/mholt/archiver/v3"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -24,13 +22,14 @@ type OpenAI struct {
 	key      string
 }
 
-func (ctx *OpenAI) waitResolveReCaptcha() chromedp.EmulateAction {
+func (ctx *OpenAI) waitResolveReCaptcha(timeout time.Duration) chromedp.EmulateAction {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
-		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Minute)
+		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), timeout)
 		defer cancel()
 		for {
 			select {
 			case <-ctxWithTimeout.Done():
+				screenshot(ctx, "recaptcha.png")
 				return errors.New("solve the reCAPTCHA error: " + ctxWithTimeout.Err().Error())
 			default:
 				var value string
@@ -44,47 +43,16 @@ func (ctx *OpenAI) waitResolveReCaptcha() chromedp.EmulateAction {
 	})
 }
 
-func (ctx *OpenAI) setClearance(clearance *string) chromedp.EmulateAction {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Minute)
-		defer cancel()
-		for {
-			select {
-			case <-ctxWithTimeout.Done():
-				return errors.New("error setting clearance: " + ctxWithTimeout.Err().Error())
-			default:
-				cookies, err := network.GetCookies().Do(ctx)
-				if err != nil {
-					return errors.New("error getting cookie: " + err.Error())
-				}
-				for _, cookie := range cookies {
-					if cookie.Name == "cf_clearance" && cookie.Domain == ".chat.openai.com" {
-						*clearance = cookie.Value
-						return nil
-					}
-				}
-			}
-			time.Sleep(time.Second)
-		}
-	})
-}
-
 func (ctx *OpenAI) setExtension() (string, error) {
 	var release []Release
 	separator := string(filepath.Separator)
-	tmp := os.TempDir()
-	dirname, err := os.UserHomeDir()
+	tempDir := GetTempDir()
+	userHomeDir, err := GetUserHomeDir()
 	if err != nil {
-		return "", errors.New("error getting user home folder: " + err.Error())
+		return "", err
 	}
-	if !strings.HasSuffix(tmp, separator) {
-		tmp += separator
-	}
-	if !strings.HasSuffix(dirname, separator) {
-		dirname += separator
-	}
-	gz := tmp + "dist.tar.gz"
-	dest := dirname
+	gz := tempDir + "dist.tar.gz"
+	dest := userHomeDir
 	dist := dest + "dist" + separator
 	background := dist + fmt.Sprintf("chrome%sbackground.js", separator)
 	_, err = os.Stat(dist)
@@ -129,15 +97,15 @@ func (ctx *OpenAI) setExtension() (string, error) {
 	return dist, nil
 }
 
-func (ctx *OpenAI) GetData() (*Data, error) {
-	var data = &Data{}
+func (ctx *OpenAI) GetPassport() (*Passport, error) {
+	var data = &Passport{}
 	dist, err := ctx.setExtension()
 	if err != nil {
 		return data, err
 	}
 	chromeCtx, cancel, err := chromedpundetected.New(chromedpundetected.NewConfig(
 		chromedpundetected.WithHeadless(),
-		chromedpundetected.WithTimeout(3*time.Minute),
+		chromedpundetected.WithTimeout(2*time.Minute),
 		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-extensions-except", dist+"chrome")),
 	))
 	if err != nil {
@@ -146,20 +114,22 @@ func (ctx *OpenAI) GetData() (*Data, error) {
 	defer cancel()
 	if err = chromedp.Run(chromeCtx,
 		chromedp.Navigate("https://chat.openai.com/auth/login"),
-		chromedp.WaitVisible(".btn:nth-child(1)"),
-		chromedp.Click(".btn:nth-child(1)"),
-		chromedp.WaitVisible("#username"),
+		waitElement(".btn:nth-child(1)", time.Minute),
+		// Avoid ajax request failure and the page will not jump.
+		clickElement(".btn:nth-child(1)", 5),
+		waitElement("#username", time.Minute),
 		chromedp.SetValue("#username", ctx.username),
-		ctx.waitResolveReCaptcha(),
-		chromedp.Sleep(time.Second),
+		ctx.waitResolveReCaptcha(time.Minute),
+		chromedp.Sleep(2*time.Second),
 		chromedp.Click("button[type='submit']"),
-		chromedp.WaitVisible("#password"),
+		waitElement("#password", time.Minute),
 		chromedp.SetValue("#password", ctx.password),
-		chromedp.WaitVisible("button[type='submit']"),
+		waitElement("button[type='submit']", time.Minute),
 		chromedp.Click("button[type='submit']"),
-		ctx.setClearance(&data.Clearance),
+		waitElement("#__next", time.Minute),
 		chromedp.Navigate("https://chat.openai.com/api/auth/session"),
-		chromedp.WaitVisible("pre"),
+		waitElement("pre", time.Minute),
+		setClearance(&data.Clearance),
 		chromedp.EvaluateAsDevTools(`navigator.userAgent`, &data.Useragent),
 		chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &data.AccessToken),
 	); err != nil {

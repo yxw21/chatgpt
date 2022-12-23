@@ -2,26 +2,39 @@ package chatgpt
 
 import (
 	"fmt"
-	"github.com/yxw21/chatgpt/session"
 	"testing"
 )
 
 func TestChatWithCredential(t *testing.T) {
+	retry := 3
 	// use username and password
-	chat := NewChat(chatgpt.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh())
-	res, err := chat.Send("hi")
-	if err != nil {
-		t.Fatal(err)
+	session := NewSessionWithCredential("example@gmail.com", "password", "I-ASDA123ASDA").AutoRefresh()
+	chat := NewChat(session)
+	for i := 0; i < retry; i++ {
+		res, err := chat.Send("hi")
+		if err == nil {
+			fmt.Println(res.Message.Content.Parts)
+			break
+		}
+		if i == retry-1 {
+			t.Fatal(err)
+		}
 	}
-	fmt.Println(res.Message.Content.Parts)
 }
 
 func TestChatWithAccessToken(t *testing.T) {
+	retry := 3
 	// use access token
-	chat := NewChat(chatgpt.NewSessionWithAccessToken("jwt").AutoRefresh())
-	res, err := chat.Send("hi")
-	if err != nil {
-		t.Fatal(err)
+	session := NewSessionWithAccessToken("jwt").AutoRefresh()
+	chat := NewChat(session)
+	for i := 0; i < retry; i++ {
+		res, err := chat.Send("hi")
+		if err == nil {
+			fmt.Println(res.Message.Content.Parts)
+			break
+		}
+		if i == retry-1 {
+			t.Fatal(err)
+		}
 	}
-	fmt.Println(res.Message.Content.Parts)
 }

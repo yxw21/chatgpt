@@ -43,39 +43,51 @@ package main
 import (
 	"fmt"
 	"github.com/yxw21/chatgpt"
-	session "github.com/yxw21/chatgpt/session"
 )
 
 func main() {
-	chat := chatgpt.NewChat(session.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh())
-	res, err := chat.Send("hi")
-	if err != nil {
-		fmt.Println(err)
-		return
+	retry := 3
+	// Make sure the session is initialized once
+	session := chatgpt.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh()
+	chat := chatgpt.NewChat(session)
+	for i := 0; i < retry; i++ {
+		res, err := chat.Send("hi")
+		if err == nil{
+			fmt.Println(res.Message.Content.Parts)
+			break
+        }
+		if i == retry - 1 {
+			fmt.Println(err)
+		}
 	}
-	fmt.Println(res.Message.Content.Parts)
 }
 ```
-2.access token login
+2.AccessToken login
 ```golang
 package main
 
 import (
 	"fmt"
 	"github.com/yxw21/chatgpt"
-	session "github.com/yxw21/chatgpt/session"
 )
 
 func main() {
-	chat := chatgpt.NewChat(session.NewSessionWithAccessToken("{access token}").AutoRefresh())
-	res, err := chat.Send("hi")
-	if err != nil {
-		fmt.Println(err)
-		return
+	retry := 3
+	// Make sure the session is initialized once
+	session := chatgpt.NewSessionWithAccessToken("AccessToken").AutoRefresh()
+	chat := chatgpt.NewChat(session)
+	for i := 0; i < retry; i++ {
+		res, err := chat.Send("hi")
+		if err == nil{
+			fmt.Println(res.Message.Content.Parts)
+			break
+		}
+		if i == retry - 1 {
+			fmt.Println(err)
+		}
 	}
-	fmt.Println(res.Message.Content.Parts)
 }
 ```
-# Access token (expires in about a day)
+# Access token (Seems to expire in 7 days)
 
 https://chat.openai.com/api/auth/session

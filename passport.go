@@ -1,6 +1,6 @@
 package chatgpt
 
-type Data struct {
+type Passport struct {
 	Clearance   string
 	Useragent   string
 	AccessToken string

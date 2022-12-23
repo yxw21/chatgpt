@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/satori/go.uuid"
-	"github.com/yxw21/chatgpt/session"
 	"io"
 	"log"
 	"net/http"
@@ -14,16 +13,16 @@ import (
 
 type Chat struct {
 	client  *http.Client
-	session *chatgpt.Session
+	session *Session
 	cid     uuid.UUID
 	pid     uuid.UUID
 }
 
 func (ctx *Chat) check() error {
-	if ctx.session.IsInvalid() {
+	if ctx.session.AccessTokenIsInvalid() {
 		return ctx.session.RefreshToken()
 	}
-	if ctx.session.GetClearance() == "" {
+	if ctx.session.ClearanceIsInValid() {
 		return ctx.session.RefreshClearance()
 	}
 	return nil
@@ -34,9 +33,6 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 		cid *uuid.UUID
 		pid *uuid.UUID
 	)
-	if err := ctx.check(); err != nil {
-		return nil, err
-	}
 	if ctx.cid != uuid.Nil {
 		cid = &ctx.cid
 	}
@@ -78,6 +74,19 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 401 {
+		log.Println(401, ctx.session)
+		if err = ctx.session.RefreshToken(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("the AccessToken has expired and was successfully refreshed, please try again")
+	} else if resp.StatusCode == 403 {
+		log.Println(403, ctx.session)
+		if err = ctx.session.RefreshClearance(); err != nil {
+			return nil, err
+		}
+		return nil, errors.New("cf has expired and was successfully refreshed, please try again")
+	}
 	responseBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
@@ -99,6 +108,6 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 	return chatResponse, nil
 }
 
-func NewChat(session *chatgpt.Session) *Chat {
+func NewChat(session *Session) *Chat {
 	return &Chat{client: &http.Client{}, session: session}
 }
