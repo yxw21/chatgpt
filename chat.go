@@ -7,6 +7,7 @@ import (
 	"github.com/satori/go.uuid"
 	"github.com/yxw21/chatgpt/session"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -84,10 +85,12 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 	arr := strings.Split(string(responseBytes), "\n\n")
 	index := len(arr) - 3
 	if index >= len(arr) || index < 1 {
+		log.Println(ctx.session)
 		return nil, errors.New(string(responseBytes))
 	}
 	arr = strings.Split(arr[index], "data: ")
 	if len(arr) < 2 {
+		log.Println(ctx.session)
 		return nil, errors.New(string(responseBytes))
 	}
 	if err = json.Unmarshal([]byte(arr[1]), &chatResponse); err != nil {

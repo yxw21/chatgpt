@@ -9,7 +9,6 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/yxw21/chatgpt/openai"
-	"math/rand"
 	"strings"
 	"time"
 )
@@ -20,6 +19,7 @@ type Session struct {
 	key         string
 	accessToken string
 	clearance   string
+	cfTime      int64
 	useragent   string
 }
 
@@ -51,7 +51,8 @@ func (ctx *Session) IsInvalid() bool {
 	if err = json.Unmarshal(bs, &user); err != nil {
 		return true
 	}
-	return (time.Now().Unix() + 60) >= time.Unix(user.Exp, 0).Unix()
+	// Refresh token 5 minutes in advance
+	return (time.Now().Unix() + 300) >= time.Unix(user.Exp, 0).Unix()
 }
 
 func (ctx *Session) RefreshToken() error {
@@ -63,6 +64,7 @@ func (ctx *Session) RefreshToken() error {
 		ctx.accessToken = data.AccessToken
 		ctx.clearance = data.Clearance
 		ctx.useragent = data.Useragent
+		ctx.cfTime = time.Now().Unix()
 	}
 	return nil
 }
@@ -77,28 +79,29 @@ func (ctx *Session) RefreshClearance() error {
 		chromedpundetected.WithTimeout(20*time.Second),
 	))
 	if err != nil {
-		return errors.New("error starting chrome _: " + err.Error())
+		return errors.New("error creating chrome context (cf): " + err.Error())
 	}
 	defer cancel()
 	if err = chromedp.Run(chromeContext,
-		chromedp.Navigate("https://chat.openai.com/chat"),
+		chromedp.Navigate("https://chat.openai.com/auth/login"),
 		chromedp.WaitVisible(`//div[@id="__next"]`),
 		chromedp.Evaluate(`navigator.userAgent`, &ctx.useragent),
 		chromedp.ActionFunc(func(browserCtx context.Context) error {
 			cookies, err = network.GetAllCookies().Do(browserCtx)
 			if err != nil {
-				return err
+				return errors.New("error getting cookie (cf): " + err.Error())
 			}
 			for _, cookie := range cookies {
 				if cookie.Name == "cf_clearance" && cookie.Domain == ".chat.openai.com" {
 					ctx.clearance = cookie.Value
+					ctx.cfTime = time.Now().Unix()
 					break
 				}
 			}
 			return nil
 		}),
 	); err != nil {
-		return errors.New("refresh clearance error: " + err.Error())
+		return errors.New("error refreshing clearance: " + err.Error())
 	}
 	return nil
 }
@@ -114,10 +117,15 @@ func (ctx *Session) autoRefreshToken() {
 
 func (ctx *Session) autoRefreshClearance() {
 	for {
-		_ = ctx.RefreshClearance()
-		rand.Seed(time.Now().UnixNano())
-		t := time.Duration(rand.Intn(300) + 60)
-		time.Sleep(t * time.Second)
+		now := time.Now().Unix()
+		val := now - ctx.cfTime
+		// https://support.cloudflare.com/hc/en-us/articles/360038470312#4C6RjJMNCGMUpBYm0vCYj1
+		// Refresh token 3 minutes in advance ()
+		t := (30 * time.Minute) - (3 * time.Minute)
+		if val > int64(t) {
+			_ = ctx.RefreshClearance()
+		}
+		time.Sleep(time.Second * 10)
 	}
 }
 

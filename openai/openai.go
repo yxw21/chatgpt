@@ -24,14 +24,14 @@ type OpenAI struct {
 	key      string
 }
 
-func (ctx *OpenAI) waitResolveCapture() chromedp.EmulateAction {
+func (ctx *OpenAI) waitResolveReCaptcha() chromedp.EmulateAction {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Minute)
 		defer cancel()
 		for {
 			select {
 			case <-ctxWithTimeout.Done():
-				return ctxWithTimeout.Err()
+				return errors.New("solve the reCAPTCHA error: " + ctxWithTimeout.Err().Error())
 			default:
 				var value string
 				_ = chromedp.Value("#g-recaptcha-response", &value).Do(ctx)
@@ -51,11 +51,11 @@ func (ctx *OpenAI) setClearance(clearance *string) chromedp.EmulateAction {
 		for {
 			select {
 			case <-ctxWithTimeout.Done():
-				return ctxWithTimeout.Err()
+				return errors.New("error setting clearance: " + ctxWithTimeout.Err().Error())
 			default:
 				cookies, err := network.GetCookies().Do(ctx)
 				if err != nil {
-					return err
+					return errors.New("error getting cookie: " + err.Error())
 				}
 				for _, cookie := range cookies {
 					if cookie.Name == "cf_clearance" && cookie.Domain == ".chat.openai.com" {
@@ -75,7 +75,7 @@ func (ctx *OpenAI) setExtension() (string, error) {
 	tmp := os.TempDir()
 	dirname, err := os.UserHomeDir()
 	if err != nil {
-		return "", errors.New("get user home dir error: " + err.Error())
+		return "", errors.New("error getting user home folder: " + err.Error())
 	}
 	if !strings.HasSuffix(tmp, separator) {
 		tmp += separator
@@ -93,16 +93,16 @@ func (ctx *OpenAI) setExtension() (string, error) {
 	}
 	resp, err := http.Get("https://api.github.com/repos/yxw21/nopecha-extension/releases")
 	if err != nil {
-		return "", errors.New("getting nopecha-extension release error: " + err.Error())
+		return "", errors.New("error getting nopecha-extension information: " + err.Error())
 	}
 	if err = json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return "", errors.New("github json decode error: " + err.Error())
+		return "", errors.New("json parsing github response error: " + err.Error())
 	}
 	resp.Body.Close()
 	downloadUrl := release[0].Assets[0].BrowserDownloadUrl
 	resp, err = http.Get(downloadUrl)
 	if err != nil {
-		return "", errors.New("download nopecha-extension error: " + err.Error())
+		return "", errors.New("error downloading nopecha-extension: " + err.Error())
 	}
 	defer resp.Body.Close()
 	buf := new(bytes.Buffer)
@@ -137,11 +137,11 @@ func (ctx *OpenAI) GetData() (*Data, error) {
 	}
 	chromeCtx, cancel, err := chromedpundetected.New(chromedpundetected.NewConfig(
 		chromedpundetected.WithHeadless(),
-		chromedpundetected.WithTimeout(5*time.Minute),
+		chromedpundetected.WithTimeout(3*time.Minute),
 		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-extensions-except", dist+"chrome")),
 	))
 	if err != nil {
-		return data, errors.New("error starting chrome: " + err.Error())
+		return data, errors.New("error creating chrome context: " + err.Error())
 	}
 	defer cancel()
 	if err = chromedp.Run(chromeCtx,
@@ -150,7 +150,7 @@ func (ctx *OpenAI) GetData() (*Data, error) {
 		chromedp.Click(".btn:nth-child(1)"),
 		chromedp.WaitVisible("#username"),
 		chromedp.SetValue("#username", ctx.username),
-		ctx.waitResolveCapture(),
+		ctx.waitResolveReCaptcha(),
 		chromedp.Sleep(time.Second),
 		chromedp.Click("button[type='submit']"),
 		chromedp.WaitVisible("#password"),
@@ -163,7 +163,7 @@ func (ctx *OpenAI) GetData() (*Data, error) {
 		chromedp.EvaluateAsDevTools(`navigator.userAgent`, &data.Useragent),
 		chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &data.AccessToken),
 	); err != nil {
-		return data, errors.New("get data error: " + err.Error())
+		return data, errors.New("login to chatgpt failed: " + err.Error())
 	}
 	return data, nil
 }
