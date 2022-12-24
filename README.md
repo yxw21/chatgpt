@@ -1,3 +1,6 @@
+# Tips
+The third-party library only supports linux, so this project only supports linux.
+
 # Dependency
 
 ### Xvfb (Only linux)
