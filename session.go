@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/Davincible/chromedp-undetected"
 	"github.com/chromedp/chromedp"
 	"strings"
 	"time"
@@ -63,8 +62,13 @@ func (ctx *Session) ClearanceIsInValid() bool {
 }
 
 func (ctx *Session) RefreshToken() error {
-	if ctx.username != "" && ctx.password != "" && ctx.key != "" {
-		passport, err := NewOpenAI(ctx.username, ctx.password, ctx.key).GetPassport()
+	if ctx.username != "" && ctx.password != "" {
+		browser, closeBrowser, err := NewBrowser(ctx.key)
+		if err != nil {
+			return err
+		}
+		defer closeBrowser()
+		passport, err := browser.GetChatGPTPassport(ctx.username, ctx.password)
 		if err != nil {
 			return err
 		}
@@ -77,19 +81,16 @@ func (ctx *Session) RefreshToken() error {
 }
 
 func (ctx *Session) RefreshClearance() error {
-	chromeContext, cancel, err := chromedpundetected.New(chromedpundetected.NewConfig(
-		chromedpundetected.WithHeadless(),
-		chromedpundetected.WithTimeout(20*time.Second),
-	))
+	browser, closeBrowser, err := NewBrowser("")
 	if err != nil {
-		return errors.New("error creating chrome context (cf): " + err.Error())
+		return err
 	}
-	defer cancel()
-	if err = chromedp.Run(chromeContext,
+	defer closeBrowser()
+	if err = chromedp.Run(browser.Context,
 		chromedp.Navigate("https://chat.openai.com/auth/login"),
-		waitElement(".btn:nth-child(1)", time.Minute),
+		waitElement(".btn:nth-child(1)", 30*time.Second),
 		chromedp.Evaluate(`navigator.userAgent`, &ctx.useragent),
-		setClearance(&ctx.clearance),
+		readClearance(&ctx.clearance),
 	); err != nil {
 		return errors.New("error refreshing clearance: " + err.Error())
 	}
@@ -107,7 +108,7 @@ func (ctx *Session) AutoRefresh() *Session {
 					_ = ctx.RefreshClearance()
 				}
 			}
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second * 5)
 		}
 	}()
 	return ctx

@@ -51,13 +51,19 @@ package main
 import (
 	"fmt"
 	"github.com/yxw21/chatgpt"
+	"log"
 )
 
 func main() {
 	retry := 3
+	browser, closeBrowser, err := chatgpt.NewBrowser("")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer closeBrowser()
 	// Make sure the session is initialized once
 	session := chatgpt.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh()
-	chat := chatgpt.NewChat(session)
+	chat := chatgpt.NewChat(browser, session)
 	for i := 0; i < retry; i++ {
 		res, err := chat.Send("hi")
 		if err == nil{
@@ -77,13 +83,19 @@ package main
 import (
 	"fmt"
 	"github.com/yxw21/chatgpt"
+	"log"
 )
 
 func main() {
 	retry := 3
+	browser, closeBrowser, err := chatgpt.NewBrowser("")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer closeBrowser()
 	// Make sure the session is initialized once
 	session := chatgpt.NewSessionWithAccessToken("AccessToken").AutoRefresh()
-	chat := chatgpt.NewChat(session)
+	chat := chatgpt.NewChat(browser, session)
 	for i := 0; i < retry; i++ {
 		res, err := chat.Send("hi")
 		if err == nil{

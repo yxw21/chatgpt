@@ -1,29 +1,32 @@
 package chatgpt
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 	"github.com/satori/go.uuid"
-	"io"
-	"log"
-	"net/http"
-	"strings"
+	"time"
+)
+
+var (
+	ErrorLogging   = errors.New("authorization information is being obtained")
+	ErrorClearance = errors.New("clearance is being refreshed")
 )
 
 type Chat struct {
-	client  *http.Client
+	browser *Browser
 	session *Session
 	cid     uuid.UUID
 	pid     uuid.UUID
 }
 
-func (ctx *Chat) check() error {
+func (ctx *Chat) Check() error {
 	if ctx.session.AccessTokenIsInvalid() {
-		return ctx.session.RefreshToken()
+		return ErrorLogging
 	}
 	if ctx.session.ClearanceIsInValid() {
-		return ctx.session.RefreshClearance()
+		return ErrorClearance
 	}
 	return nil
 }
@@ -52,8 +55,11 @@ func (ctx *Chat) Send(word string) (*Response, error) {
 }
 
 func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error) {
-	var chatResponse *Response
-	if err := ctx.check(); err != nil {
+	var (
+		chatResponse *Response
+		response     any
+	)
+	if err := ctx.Check(); err != nil {
 		return nil, err
 	}
 	chatRequest := NewRequest(word, cid, pid)
@@ -61,53 +67,25 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", "https://chat.openai.com/backend-api/conversation", bytes.NewBuffer(requestBytes))
-	if err != nil {
+	if err = chromedp.Run(ctx.browser.Context,
+		setCookie("cf_clearance", ctx.session.clearance, ".chat.openai.com", "/", time.Now().Add(7*24*time.Hour), true, true, network.CookieSameSiteNone),
+		sendRequest(ctx.session.accessToken, requestBytes, &response),
+	); err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", ctx.session.GetUserAgent())
-	req.Header.Set("Authorization", "Bearer "+ctx.session.GetAccessToken())
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Cookie", "cf_clearance="+ctx.session.GetClearance())
-	resp, err := ctx.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == 401 {
-		log.Println(401, ctx.session)
-		if err = ctx.session.RefreshToken(); err != nil {
-			return nil, err
+	switch res := response.(type) {
+	case string:
+		return nil, errors.New(res)
+	case map[string]any:
+		if err = ConvertMapToStruct(res, &chatResponse); err != nil {
+			return nil, errors.New("ConvertMapToStruct failed: " + err.Error())
 		}
-		return nil, errors.New("the AccessToken has expired and was successfully refreshed, please try again")
-	} else if resp.StatusCode == 403 {
-		log.Println(403, ctx.session)
-		if err = ctx.session.RefreshClearance(); err != nil {
-			return nil, err
-		}
-		return nil, errors.New("cf has expired and was successfully refreshed, please try again")
+		return chatResponse, nil
+	default:
+		return nil, errors.New("unknown error")
 	}
-	responseBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	arr := strings.Split(string(responseBytes), "\n\n")
-	index := len(arr) - 3
-	if index >= len(arr) || index < 1 {
-		log.Println(ctx.session)
-		return nil, errors.New(string(responseBytes))
-	}
-	arr = strings.Split(arr[index], "data: ")
-	if len(arr) < 2 {
-		log.Println(ctx.session)
-		return nil, errors.New(string(responseBytes))
-	}
-	if err = json.Unmarshal([]byte(arr[1]), &chatResponse); err != nil {
-		return nil, err
-	}
-	return chatResponse, nil
 }
 
-func NewChat(session *Session) *Chat {
-	return &Chat{client: &http.Client{}, session: session}
+func NewChat(browser *Browser, session *Session) *Chat {
+	return &Chat{browser: browser, session: session}
 }

@@ -8,7 +8,7 @@ import (
 func TestNewSessionWithCredential(t *testing.T) {
 	retry := 3
 	// use credential
-	session := NewSessionWithCredential("example@gmail.com", "password", "I-ASDA123ASDA").AutoRefresh()
+	session := NewSessionWithCredential("chatgpt@gmail.com", "password", "I-ABCDEFGHIJKL").AutoRefresh()
 	if session.AccessTokenIsInvalid() {
 		for i := 0; i < retry; i++ {
 			err := session.RefreshToken()
@@ -28,7 +28,7 @@ func TestNewSessionWithCredential(t *testing.T) {
 func TestNewSessionWithAccessToken(t *testing.T) {
 	retry := 3
 	// use access token
-	session := NewSessionWithAccessToken("jwt").AutoRefresh()
+	session := NewSessionWithAccessToken("eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0").AutoRefresh()
 	if session.ClearanceIsInValid() {
 		for i := 0; i < retry; i++ {
 			err := session.RefreshClearance()

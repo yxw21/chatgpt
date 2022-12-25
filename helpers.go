@@ -3,9 +3,12 @@ package chatgpt
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"os"
 	"path/filepath"
@@ -67,21 +70,7 @@ func waitElement(sel string, timeout time.Duration) chromedp.EmulateAction {
 	})
 }
 
-func clickElement(sel string, number int) chromedp.EmulateAction {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		var isValid bool
-		_ = chromedp.EvaluateAsDevTools(fmt.Sprintf(`(function(sel, count){
-for(let i = 1; i <= count; i++){
-    var evt = document.createEvent('Event');
-    evt.initEvent('click',true,true);
-    document.querySelector(sel).dispatchEvent(evt);
-}
-})("%s", %d)==false`, sel, number), &isValid).Do(ctx)
-		return nil
-	})
-}
-
-func setClearance(clearance *string) chromedp.EmulateAction {
+func readClearance(clearance *string) chromedp.EmulateAction {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), time.Second*10)
 		defer cancel()
@@ -105,4 +94,62 @@ func setClearance(clearance *string) chromedp.EmulateAction {
 			time.Sleep(500 * time.Millisecond)
 		}
 	})
+}
+
+func setCookie(name, value, domain, path string, expires time.Time, httpOnly, secure bool, sameSite network.CookieSameSite) chromedp.EmulateAction {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		expr := cdp.TimeSinceEpoch(expires)
+		return network.SetCookie(name, value).
+			WithDomain(domain).
+			WithPath(path).
+			WithExpires(&expr).
+			WithHTTPOnly(httpOnly).
+			WithSecure(secure).
+			WithSameSite(sameSite).
+			Do(ctx)
+	})
+}
+
+func sendRequest(accessToken string, body []byte, response any) chromedp.EmulateAction {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return chromedp.EvaluateAsDevTools(fmt.Sprintf(`new Promise((resolve) => {
+  fetch("https://chat.openai.com/backend-api/conversation", {
+    "headers": {
+      "authorization": "Bearer %s",
+      "content-type": "application/json",
+      "x-openai-assistant-app-id": ""
+    },
+    "body": JSON.stringify(%s),
+    "method": "POST",
+    "mode": "cors",
+    "credentials": "include"
+  })
+  .then(context => context.text())
+  .then(content => {
+    let arr = content.split("\n\n");
+    let len = arr.length;
+    let index=len-3;
+    if(index > -1 && index < len){
+      content = arr[index];
+      arr = content.split("data: ");
+      if(arr.length > 1){
+        resolve(JSON.parse(arr[1]));
+        return;
+      }
+    }
+    resolve(content);
+  })
+  .catch(e => resolve(e.toString()));
+})`, accessToken, string(body)), &response, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}).Do(ctx)
+	})
+}
+
+func ConvertMapToStruct(data map[string]any, result any) error {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bytes, &result)
 }
