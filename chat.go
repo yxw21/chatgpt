@@ -1,9 +1,13 @@
 package chatgpt
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/satori/go.uuid"
 	"time"
@@ -29,6 +33,56 @@ func (ctx *Chat) Check() error {
 		return ErrorClearance
 	}
 	return nil
+}
+
+func (ctx *Chat) setCookie(name, value, domain, path string, expires time.Time, httpOnly, secure bool, sameSite network.CookieSameSite) chromedp.EmulateAction {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		expr := cdp.TimeSinceEpoch(expires)
+		return network.SetCookie(name, value).
+			WithDomain(domain).
+			WithPath(path).
+			WithExpires(&expr).
+			WithHTTPOnly(httpOnly).
+			WithSecure(secure).
+			WithSameSite(sameSite).
+			Do(ctx)
+	})
+}
+
+func (ctx *Chat) sendRequest(accessToken string, body []byte, response any) chromedp.EmulateAction {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return chromedp.EvaluateAsDevTools(fmt.Sprintf(`new Promise((resolve) => {
+  fetch("https://chat.openai.com/backend-api/conversation", {
+    "headers": {
+      "authorization": "Bearer %s",
+      "content-type": "application/json",
+      "x-openai-assistant-app-id": ""
+    },
+    "body": JSON.stringify(%s),
+    "method": "POST",
+    "mode": "cors",
+    "credentials": "include"
+  })
+  .then(context => context.text())
+  .then(content => {
+    let arr = content.split("\n\n");
+    let len = arr.length;
+    let index=len-3;
+    if(index > -1 && index < len){
+      content = arr[index];
+      arr = content.split("data: ");
+      if(arr.length > 1){
+        resolve(JSON.parse(arr[1]));
+        return;
+      }
+    }
+    resolve(content);
+  })
+  .catch(e => resolve(e.toString()));
+})`, accessToken, string(body)), &response, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		}).Do(ctx)
+	})
 }
 
 func (ctx *Chat) Send(word string) (*Response, error) {
@@ -68,8 +122,8 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 		return nil, err
 	}
 	if err = chromedp.Run(ctx.browser.Context,
-		setCookie("cf_clearance", ctx.session.clearance, ".chat.openai.com", "/", time.Now().Add(7*24*time.Hour), true, true, network.CookieSameSiteNone),
-		sendRequest(ctx.session.accessToken, requestBytes, &response),
+		ctx.setCookie("cf_clearance", ctx.session.clearance, ".chat.openai.com", "/", time.Now().Add(7*24*time.Hour), true, true, network.CookieSameSiteNone),
+		ctx.sendRequest(ctx.session.accessToken, requestBytes, &response),
 	); err != nil {
 		return nil, err
 	}

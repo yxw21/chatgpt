@@ -13,58 +13,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 type Browser struct {
 	Context context.Context
-}
-
-func (ctx *Browser) waitResolveReCaptcha(timeout time.Duration) chromedp.EmulateAction {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		ctxWithTimeout, cancel := context.WithTimeout(context.TODO(), timeout)
-		defer cancel()
-		for {
-			select {
-			case <-ctxWithTimeout.Done():
-				return errors.New("solve the reCAPTCHA error: " + ctxWithTimeout.Err().Error())
-			default:
-				var value string
-				_ = chromedp.Value("#g-recaptcha-response", &value).Do(ctx)
-				if value != "" {
-					return nil
-				}
-			}
-			time.Sleep(time.Second)
-		}
-	})
-}
-
-func (ctx *Browser) GetChatGPTPassport(username, password string) (*Passport, error) {
-	var passport = &Passport{}
-	if err := chromedp.Run(ctx.Context,
-		chromedp.Navigate("https://chat.openai.com/auth/login"),
-		waitElement(".btn:nth-child(1)", 30*time.Second),
-		chromedp.Click(".btn:nth-child(1)"),
-		waitElement("#username", 30*time.Second),
-		chromedp.SetValue("#username", username),
-		ctx.waitResolveReCaptcha(time.Minute),
-		chromedp.Sleep(2*time.Second),
-		chromedp.Click("button[type='submit']"),
-		waitElement("#password", 30*time.Second),
-		chromedp.SetValue("#password", password),
-		waitElement("button[type='submit']", 30*time.Second),
-		chromedp.Click("button[type='submit']"),
-		waitElement("#__next", 30*time.Second),
-		chromedp.Navigate("https://chat.openai.com/api/auth/session"),
-		waitElement("pre", 30*time.Second),
-		readClearance(&passport.Clearance),
-		chromedp.EvaluateAsDevTools(`navigator.userAgent`, &passport.Useragent),
-		chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &passport.AccessToken),
-	); err != nil {
-		return passport, errors.New("login to chatgpt failed: " + err.Error())
-	}
-	return passport, nil
 }
 
 func (ctx *Browser) setExtension(key string) (string, error) {
@@ -122,7 +74,10 @@ func (ctx *Browser) setExtension(key string) (string, error) {
 }
 
 func NewBrowser(extensionKey string) (*Browser, context.CancelFunc, error) {
-	config := chromedpundetected.NewConfig(chromedpundetected.WithHeadless())
+	config := chromedpundetected.NewConfig(
+		chromedpundetected.WithHeadless(),
+		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-dev-shm-usage", true)),
+	)
 	browser := &Browser{}
 	if extensionKey != "" {
 		dist, err := browser.setExtension(extensionKey)
@@ -131,7 +86,10 @@ func NewBrowser(extensionKey string) (*Browser, context.CancelFunc, error) {
 		}
 		config = chromedpundetected.NewConfig(
 			chromedpundetected.WithHeadless(),
-			chromedpundetected.WithChromeFlags(chromedp.Flag("disable-extensions-except", dist+"chrome")),
+			chromedpundetected.WithChromeFlags(
+				chromedp.Flag("disable-extensions-except", dist+"chrome"),
+				chromedp.Flag("disable-dev-shm-usage", true),
+			),
 		)
 	}
 	chromeCtx, cancel, err := chromedpundetected.New(config)
@@ -139,7 +97,7 @@ func NewBrowser(extensionKey string) (*Browser, context.CancelFunc, error) {
 		return nil, nil, errors.New("error creating chrome context: " + err.Error())
 	}
 	browser.Context = chromeCtx
-	err = chromedp.Run(browser.Context, chromedp.Navigate("https://chat.openai.com/auth/login"))
+	err = chromedp.Run(browser.Context, chromedp.Navigate("https://chat.openai.com/api/auth/session"))
 	if err != nil {
 		return nil, nil, err
 	}

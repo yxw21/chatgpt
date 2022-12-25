@@ -33,13 +33,13 @@ func startChat(chat *Chat, message string, retry int) {
 
 func TestChatWithCredential(t *testing.T) {
 	retry := 3
-	browser, closeBrowser, err := NewBrowser("")
+	browser, closeBrowser, err := NewBrowser("I-ABCDEFGHIJK")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeBrowser()
 	// use username and password
-	session := NewSessionWithCredential("chatgpt@gmail.com", "password", "I-ABCDEFGHIJKL").AutoRefresh()
+	session := NewSessionWithCredential(browser, "example@gmail.com", "password").AutoRefresh()
 	chat := NewChat(browser, session)
 	startChat(chat, "hi", retry)
 	startChat(chat, "hello", retry)
@@ -53,7 +53,7 @@ func TestChatWithAccessToken(t *testing.T) {
 	}
 	defer closeBrowser()
 	// use access token
-	session := NewSessionWithAccessToken("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik1UaEVOVUpHTkVNMVFURTRNMEZCTWpkQ05UZzVNRFUxUlRVd1FVSkRNRU13UmtGRVFrRXpSZyJ9").AutoRefresh()
+	session := NewSessionWithAccessToken(browser, "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik1UaEVOVUpHTkVNMVFURTRNMEZCTWpkQ05UZzVNRFUxUlRVd1FVSkRNRU13UmtGRVFrRXpSZyJ9").AutoRefresh()
 	chat := NewChat(browser, session)
 	startChat(chat, "hi", retry)
 	startChat(chat, "hello", retry)
