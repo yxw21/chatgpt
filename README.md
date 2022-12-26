@@ -55,11 +55,10 @@ import (
 )
 
 func main() {
-	retry := 3
 	browser, closeBrowser, err := chatgpt.NewBrowser(chatgpt.BrowserOptions{
 		ExtensionKey: "I-ABCDEFGHIJKL",
 		//Proxy:        "socks5://38.91.107.224:36699",
-    })
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,16 +66,11 @@ func main() {
 	// Make sure the session is initialized once
 	session := chatgpt.NewSessionWithCredential(browser, "example@gmail.com", "123456").AutoRefresh()
 	chat := chatgpt.NewChat(browser, session)
-	for i := 0; i < retry; i++ {
-		res, err := chat.Send("hi")
-		if err == nil{
-			fmt.Println(res.Message.Content.Parts)
-			break
-        }
-		if i == retry - 1 {
-			fmt.Println(err)
-		}
+	res, err := chat.Send("hi")
+	if err != nil{
+		log.Panic(err)
 	}
+	fmt.Println(res.Message.Content.Parts)
 }
 ```
 2.AccessToken login
@@ -90,7 +84,6 @@ import (
 )
 
 func main() {
-	retry := 3
 	browser, closeBrowser, err := chatgpt.NewBrowser(chatgpt.BrowserOptions{
 		//Proxy:        "socks5://38.91.107.224:36699",
 	})
@@ -101,16 +94,11 @@ func main() {
 	// Make sure the session is initialized once
 	session := chatgpt.NewSessionWithAccessToken(browser, "AccessToken").AutoRefresh()
 	chat := chatgpt.NewChat(browser, session)
-	for i := 0; i < retry; i++ {
-		res, err := chat.Send("hi")
-		if err == nil{
-			fmt.Println(res.Message.Content.Parts)
-			break
-		}
-		if i == retry - 1 {
-			fmt.Println(err)
-		}
+	res, err := chat.Send("hi")
+	if err != nil {
+		log.Panic(err)
 	}
+	fmt.Println(res.Message.Content.Parts)
 }
 ```
 # Access token (Seems to expire in 7 days)
