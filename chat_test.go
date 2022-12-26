@@ -33,7 +33,10 @@ func startChat(chat *Chat, message string, retry int) {
 
 func TestChatWithCredential(t *testing.T) {
 	retry := 3
-	browser, closeBrowser, err := NewBrowser("I-ABCDEFGHIJK")
+	browser, closeBrowser, err := NewBrowser(BrowserOptions{
+		ExtensionKey: "I-ABCDEFGHIJKL",
+		//Proxy:        "socks5://38.91.107.224:36699",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,11 +46,14 @@ func TestChatWithCredential(t *testing.T) {
 	chat := NewChat(browser, session)
 	startChat(chat, "hi", retry)
 	startChat(chat, "hello", retry)
+	startChat(chat, "hey", retry)
 }
 
 func TestChatWithAccessToken(t *testing.T) {
 	retry := 3
-	browser, closeBrowser, err := NewBrowser("")
+	browser, closeBrowser, err := NewBrowser(BrowserOptions{
+		//Proxy: "socks5://38.91.107.224:36699",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,4 +63,5 @@ func TestChatWithAccessToken(t *testing.T) {
 	chat := NewChat(browser, session)
 	startChat(chat, "hi", retry)
 	startChat(chat, "hello", retry)
+	startChat(chat, "hey", retry)
 }

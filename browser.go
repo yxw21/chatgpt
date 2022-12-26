@@ -73,25 +73,26 @@ func (ctx *Browser) setExtension(key string) (string, error) {
 	return dist, nil
 }
 
-func NewBrowser(extensionKey string) (*Browser, context.CancelFunc, error) {
-	config := chromedpundetected.NewConfig(
-		chromedpundetected.WithHeadless(),
-		chromedpundetected.WithChromeFlags(chromedp.Flag("disable-dev-shm-usage", true)),
-	)
+func NewBrowser(browserOptions BrowserOptions) (*Browser, context.CancelFunc, error) {
 	browser := &Browser{}
-	if extensionKey != "" {
-		dist, err := browser.setExtension(extensionKey)
+	flags := []chromedp.ExecAllocatorOption{
+		chromedp.Flag("disable-dev-shm-usage", true),
+	}
+	if browserOptions.Proxy != "" {
+		flags = append(flags, chromedp.Flag("proxy-server", browserOptions.Proxy))
+	}
+	if browserOptions.ExtensionKey != "" {
+		dist, err := browser.setExtension(browserOptions.ExtensionKey)
 		if err != nil {
 			return nil, nil, err
 		}
-		config = chromedpundetected.NewConfig(
-			chromedpundetected.WithHeadless(),
-			chromedpundetected.WithChromeFlags(
-				chromedp.Flag("disable-extensions-except", dist+"chrome"),
-				chromedp.Flag("disable-dev-shm-usage", true),
-			),
-		)
+		flags = append(flags, chromedp.Flag("disable-extensions-except", dist+"chrome"))
 	}
+	options := []chromedpundetected.Option{
+		chromedpundetected.WithHeadless(),
+		chromedpundetected.WithChromeFlags(flags...),
+	}
+	config := chromedpundetected.NewConfig(options...)
 	chromeCtx, cancel, err := chromedpundetected.New(config)
 	if err != nil {
 		return nil, nil, errors.New("error creating chrome context: " + err.Error())

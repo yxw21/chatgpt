@@ -3,7 +3,7 @@ The third-party library only supports linux, so this project only supports linux
 
 # Dependency
 
-### Xvfb (Only linux)
+### Xvfb
 
 On Ubuntu or Debian
 ```
@@ -56,13 +56,16 @@ import (
 
 func main() {
 	retry := 3
-	browser, closeBrowser, err := chatgpt.NewBrowser("")
+	browser, closeBrowser, err := chatgpt.NewBrowser(chatgpt.BrowserOptions{
+		ExtensionKey: "I-ABCDEFGHIJKL",
+		//Proxy:        "socks5://38.91.107.224:36699",
+    })
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeBrowser()
 	// Make sure the session is initialized once
-	session := chatgpt.NewSessionWithCredential("example@gmail.com", "123456", "I-1123123KASD").AutoRefresh()
+	session := chatgpt.NewSessionWithCredential(browser, "example@gmail.com", "123456").AutoRefresh()
 	chat := chatgpt.NewChat(browser, session)
 	for i := 0; i < retry; i++ {
 		res, err := chat.Send("hi")
@@ -88,13 +91,15 @@ import (
 
 func main() {
 	retry := 3
-	browser, closeBrowser, err := chatgpt.NewBrowser("")
+	browser, closeBrowser, err := chatgpt.NewBrowser(chatgpt.BrowserOptions{
+		//Proxy:        "socks5://38.91.107.224:36699",
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer closeBrowser()
 	// Make sure the session is initialized once
-	session := chatgpt.NewSessionWithAccessToken("AccessToken").AutoRefresh()
+	session := chatgpt.NewSessionWithAccessToken(browser, "AccessToken").AutoRefresh()
 	chat := chatgpt.NewChat(browser, session)
 	for i := 0; i < retry; i++ {
 		res, err := chat.Send("hi")

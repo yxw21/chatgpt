@@ -7,7 +7,10 @@ import (
 
 func TestNewSessionWithCredential(t *testing.T) {
 	retry := 3
-	browser, closeBrowser, err := NewBrowser("I-ABCDEFGHIJK")
+	browser, closeBrowser, err := NewBrowser(BrowserOptions{
+		ExtensionKey: "I-ABCDEFGHIJKL",
+		//Proxy:        "socks5://38.91.107.224:36699",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +34,9 @@ func TestNewSessionWithCredential(t *testing.T) {
 
 func TestNewSessionWithAccessToken(t *testing.T) {
 	retry := 3
-	browser, closeBrowser, err := NewBrowser("")
+	browser, closeBrowser, err := NewBrowser(BrowserOptions{
+		//Proxy: "socks5://38.91.107.224:36699",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

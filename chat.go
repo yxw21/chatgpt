@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/chromedp/cdproto/cdp"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/satori/go.uuid"
-	"time"
 )
 
 var (
@@ -33,20 +30,6 @@ func (ctx *Chat) Check() error {
 		return ErrorClearance
 	}
 	return nil
-}
-
-func (ctx *Chat) setCookie(name, value, domain, path string, expires time.Time, httpOnly, secure bool, sameSite network.CookieSameSite) chromedp.EmulateAction {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		expr := cdp.TimeSinceEpoch(expires)
-		return network.SetCookie(name, value).
-			WithDomain(domain).
-			WithPath(path).
-			WithExpires(&expr).
-			WithHTTPOnly(httpOnly).
-			WithSecure(secure).
-			WithSameSite(sameSite).
-			Do(ctx)
-	})
 }
 
 func (ctx *Chat) sendRequest(accessToken string, body []byte, response any) chromedp.EmulateAction {
@@ -122,7 +105,6 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 		return nil, err
 	}
 	if err = chromedp.Run(ctx.browser.Context,
-		ctx.setCookie("cf_clearance", ctx.session.clearance, ".chat.openai.com", "/", time.Now().Add(7*24*time.Hour), true, true, network.CookieSameSiteNone),
 		ctx.sendRequest(ctx.session.accessToken, requestBytes, &response),
 	); err != nil {
 		return nil, err
