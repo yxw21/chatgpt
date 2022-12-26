@@ -16,7 +16,8 @@ import (
 )
 
 type Browser struct {
-	Context context.Context
+	Context        context.Context
+	browserOptions BrowserOptions
 }
 
 func (ctx *Browser) setExtension(key string) (string, error) {
@@ -74,7 +75,9 @@ func (ctx *Browser) setExtension(key string) (string, error) {
 }
 
 func NewBrowser(browserOptions BrowserOptions) (*Browser, context.CancelFunc, error) {
-	browser := &Browser{}
+	browser := &Browser{
+		browserOptions: browserOptions,
+	}
 	flags := []chromedp.ExecAllocatorOption{
 		chromedp.Flag("disable-dev-shm-usage", true),
 	}

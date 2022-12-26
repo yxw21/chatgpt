@@ -44,7 +44,7 @@ apk add chromium
 ```
 
 # Login
-1. username and password
+It is recommended to provide both the username password and the accesstoken, because when providing the accesstoken, the program will use the username password to refresh the accesstoken only when the accesstoken is about to expire, thus reducing the user's waiting time to refresh the accesstoken.
 ```golang
 package main
 
@@ -63,39 +63,16 @@ func main() {
 		log.Fatal(err)
 	}
 	defer closeBrowser()
-	// Make sure the session is initialized once
-	session := chatgpt.NewSessionWithCredential(browser, "example@gmail.com", "123456").AutoRefresh()
+	// [!!!] Make sure the session is initialized once
+	session := (&chatgpt.Session{
+		Browser:     browser,
+		Username:    "example@gmail.com",
+		Password:    "password",
+		AccessToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6Ik1UaEVOVUpHTkVNMVFURTRNMEZCTWpkQ05UZzVNRFUxUlRVd1FVSkRNRU13UmtGRVFrRXpSZyJ9",
+	}).AutoRefresh()
 	chat := chatgpt.NewChat(browser, session)
 	res, err := chat.Send("hi")
 	if err != nil{
-		log.Panic(err)
-	}
-	fmt.Println(res.Message.Content.Parts)
-}
-```
-2.AccessToken login
-```golang
-package main
-
-import (
-	"fmt"
-	"github.com/yxw21/chatgpt"
-	"log"
-)
-
-func main() {
-	browser, closeBrowser, err := chatgpt.NewBrowser(chatgpt.BrowserOptions{
-		//Proxy:        "socks5://38.91.107.224:36699",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer closeBrowser()
-	// Make sure the session is initialized once
-	session := chatgpt.NewSessionWithAccessToken(browser, "AccessToken").AutoRefresh()
-	chat := chatgpt.NewChat(browser, session)
-	res, err := chat.Send("hi")
-	if err != nil {
 		log.Panic(err)
 	}
 	fmt.Println(res.Message.Content.Parts)

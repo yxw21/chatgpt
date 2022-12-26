@@ -105,7 +105,7 @@ func (ctx *Chat) SendMessage(word string, cid, pid *uuid.UUID) (*Response, error
 		return nil, err
 	}
 	if err = chromedp.Run(ctx.browser.Context,
-		ctx.sendRequest(ctx.session.accessToken, requestBytes, &response),
+		ctx.sendRequest(ctx.session.AccessToken, requestBytes, &response),
 	); err != nil {
 		return nil, err
 	}

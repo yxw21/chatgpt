@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"log"
@@ -17,16 +18,12 @@ import (
 const cfExpire = 120 * time.Minute
 
 type Session struct {
-	browser          *Browser
-	username         string
-	password         string
-	accessToken      string
+	Browser          *Browser
+	Username         string
+	Password         string
+	AccessToken      string
 	clearance        string
 	clearanceCreated int64
-}
-
-func (ctx *Session) GetAccessToken() string {
-	return ctx.accessToken
 }
 
 func (ctx *Session) GetClearance() string {
@@ -35,10 +32,10 @@ func (ctx *Session) GetClearance() string {
 
 func (ctx *Session) AccessTokenIsInvalid() bool {
 	var user User
-	if ctx.accessToken == "" {
+	if ctx.AccessToken == "" {
 		return true
 	}
-	sli := strings.Split(ctx.accessToken, ".")
+	sli := strings.Split(ctx.AccessToken, ".")
 	if len(sli) != 3 {
 		return true
 	}
@@ -49,13 +46,13 @@ func (ctx *Session) AccessTokenIsInvalid() bool {
 	if err = json.Unmarshal(bs, &user); err != nil {
 		return true
 	}
-	return (time.Now().Unix() + int64((5 * time.Minute).Seconds())) >= time.Unix(user.Exp, 0).Unix()
+	return (time.Now().Unix() + int64((6 * time.Hour).Seconds())) >= time.Unix(user.Exp, 0).Unix()
 }
 
 func (ctx *Session) ClearanceIsInValid() bool {
 	now := time.Now().Unix()
 	val := now - ctx.clearanceCreated
-	t := cfExpire - (10 * time.Minute)
+	t := cfExpire - (30 * time.Minute)
 	return val > int64(t.Seconds())
 }
 
@@ -139,9 +136,30 @@ func (ctx *Session) readClearance(clearance *string) chromedp.EmulateAction {
 	})
 }
 
+func (ctx *Session) setClearance(clearance string) {
+	tab, closeTab := chromedp.NewContext(ctx.Browser.Context)
+	defer closeTab()
+	tabTimeout, closeTabTimeout := context.WithTimeout(tab, 30*time.Second)
+	defer closeTabTimeout()
+	if err := chromedp.Run(tabTimeout,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			expr := cdp.TimeSinceEpoch(time.Now().Add(365 * 24 * time.Hour))
+			return network.SetCookie("cf_clearance", clearance).
+				WithDomain(".chat.openai.com").
+				WithPath("/").
+				WithExpires(&expr).
+				WithHTTPOnly(true).
+				WithSecure(true).
+				WithSameSite(network.CookieSameSiteNone).
+				Do(ctx)
+		})); err != nil {
+		log.Println("error setting cloudflare cookie: " + err.Error())
+	}
+}
+
 func (ctx *Session) RefreshToken() error {
-	if ctx.username != "" && ctx.password != "" {
-		tab, closeTab := chromedp.NewContext(ctx.browser.Context)
+	if ctx.Username != "" && ctx.Password != "" {
+		tab, closeTab := chromedp.NewContext(ctx.Browser.Context)
 		defer closeTab()
 		tabTimeout, closeTabTimeout := context.WithTimeout(tab, 2*time.Minute)
 		defer closeTabTimeout()
@@ -150,34 +168,37 @@ func (ctx *Session) RefreshToken() error {
 			ctx.waitElement(".btn:nth-child(1)", 30*time.Second),
 			chromedp.Click(".btn:nth-child(1)"),
 			ctx.waitElement("#username", 30*time.Second),
-			chromedp.SetValue("#username", ctx.username),
+			chromedp.SetValue("#username", ctx.Username),
 			ctx.waitResolveReCaptcha(time.Minute),
 			chromedp.Sleep(2*time.Second),
 			chromedp.Click("button[type='submit']"),
 			ctx.waitElement("#password", 30*time.Second),
-			chromedp.SetValue("#password", ctx.password),
+			chromedp.SetValue("#password", ctx.Password),
 			ctx.waitElement("button[type='submit']", 30*time.Second),
 			chromedp.Click("button[type='submit']"),
 			ctx.waitElement("#__next", 30*time.Second),
 			chromedp.Navigate("https://chat.openai.com/api/auth/session"),
 			ctx.waitElement("pre", 30*time.Second),
 			ctx.readClearance(&ctx.clearance),
-			chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &ctx.accessToken),
+			chromedp.EvaluateAsDevTools(`JSON.parse(document.querySelector("pre").innerHTML).accessToken`, &ctx.AccessToken),
 		); err != nil {
 			return errors.New("login to chatgpt failed: " + err.Error())
 		}
 		ctx.clearanceCreated = time.Now().Unix()
 		return nil
 	}
-	return nil
+	return errors.New("no username and password set")
 }
 
 func (ctx *Session) RefreshClearance() error {
-	tab, closeTab := chromedp.NewContext(ctx.browser.Context)
+	browser, closeBrowser, err := NewBrowser(ctx.Browser.browserOptions)
+	if err != nil {
+		return err
+	}
+	defer closeBrowser()
+	tab, closeTab := context.WithTimeout(browser.Context, time.Minute)
 	defer closeTab()
-	tabTimeout, closeTabTimeout := context.WithTimeout(tab, time.Minute)
-	defer closeTabTimeout()
-	if err := chromedp.Run(tabTimeout,
+	if err = chromedp.Run(tab,
 		chromedp.Navigate("https://chat.openai.com/auth/login"),
 		ctx.waitElement(".btn:nth-child(1)", 30*time.Second),
 		ctx.readClearance(&ctx.clearance),
@@ -185,13 +206,14 @@ func (ctx *Session) RefreshClearance() error {
 		return errors.New("error refreshing clearance: " + err.Error())
 	}
 	ctx.clearanceCreated = time.Now().Unix()
+	ctx.setClearance(ctx.clearance)
 	return nil
 }
 
 func (ctx *Session) AutoRefresh() *Session {
 	go func() {
 		for {
-			if ctx.AccessTokenIsInvalid() {
+			if ctx.AccessTokenIsInvalid() && ctx.Username != "" && ctx.Password != "" {
 				log.Println("start refresh token")
 				if err := ctx.RefreshToken(); err != nil {
 					log.Println("refresh token failed: " + err.Error())
@@ -203,23 +225,8 @@ func (ctx *Session) AutoRefresh() *Session {
 					_ = ctx.RefreshClearance()
 				}
 			}
-			time.Sleep(time.Second * 5)
+			time.Sleep(5 * time.Second)
 		}
 	}()
 	return ctx
-}
-
-func NewSessionWithCredential(browser *Browser, username, password string) *Session {
-	return &Session{
-		browser:  browser,
-		username: username,
-		password: password,
-	}
-}
-
-func NewSessionWithAccessToken(browser *Browser, accessToken string) *Session {
-	return &Session{
-		browser:     browser,
-		accessToken: accessToken,
-	}
 }
