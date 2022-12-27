@@ -52,7 +52,10 @@ func (ctx *Session) getExpFromAccessToken() (int64, error) {
 	}
 	bs, err := base64.StdEncoding.DecodeString(sli[1])
 	if err != nil {
-		return 0, ErrorAccessTokenFormatError
+		bs, err = base64.RawStdEncoding.DecodeString(sli[1])
+		if err != nil {
+			return 0, ErrorAccessTokenFormatError
+		}
 	}
 	if err = json.Unmarshal(bs, &user); err != nil {
 		return 0, ErrorAccessTokenFormatError
