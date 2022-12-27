@@ -10,11 +10,6 @@ import (
 	"github.com/satori/go.uuid"
 )
 
-var (
-	ErrorLogging   = errors.New("authorization information is being obtained")
-	ErrorClearance = errors.New("clearance is being refreshed")
-)
-
 type Chat struct {
 	browser *Browser
 	session *Session
@@ -23,11 +18,11 @@ type Chat struct {
 }
 
 func (ctx *Chat) Check() error {
-	if ctx.session.AccessTokenIsInvalid() {
-		return ErrorLogging
+	if err := ctx.session.CheckAccessToken(); err != nil {
+		return err
 	}
-	if ctx.session.ClearanceIsInValid() {
-		return ErrorClearance
+	if err := ctx.session.CheckClearance(); err != nil {
+		return err
 	}
 	return nil
 }

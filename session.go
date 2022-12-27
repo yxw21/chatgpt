@@ -17,6 +17,14 @@ import (
 
 const cfExpire = 120 * time.Minute
 
+var (
+	ErrorAccessTokenIsEmpty     = errors.New("accessToken does not provide")
+	ErrorAccessTokenGet         = errors.New("the accessToken is being obtained")
+	ErrorAccessTokenFormatError = errors.New("the provided accessToken is in the wrong format")
+	ErrorAccessTokenExpires     = errors.New("the provided accessToken has expired")
+	ErrorClearanceExpires       = errors.New("clearance has expired")
+)
+
 type Session struct {
 	Browser          *Browser
 	Username         string
@@ -30,30 +38,66 @@ func (ctx *Session) GetClearance() string {
 	return ctx.clearance
 }
 
-func (ctx *Session) AccessTokenIsInvalid() bool {
+func (ctx *Session) getExpFromAccessToken() (int64, error) {
 	var user User
 	if ctx.AccessToken == "" {
-		return true
+		if ctx.Username != "" && ctx.Password != "" {
+			return 0, ErrorAccessTokenGet
+		}
+		return 0, ErrorAccessTokenIsEmpty
 	}
 	sli := strings.Split(ctx.AccessToken, ".")
 	if len(sli) != 3 {
-		return true
+		return 0, ErrorAccessTokenFormatError
 	}
 	bs, err := base64.StdEncoding.DecodeString(sli[1])
 	if err != nil {
-		return true
+		return 0, ErrorAccessTokenFormatError
 	}
 	if err = json.Unmarshal(bs, &user); err != nil {
-		return true
+		return 0, ErrorAccessTokenFormatError
 	}
-	return (time.Now().Unix() + int64((6 * time.Hour).Seconds())) >= time.Unix(user.Exp, 0).Unix()
+	return time.Unix(user.Exp, 0).Unix(), nil
 }
 
-func (ctx *Session) ClearanceIsInValid() bool {
+func (ctx *Session) accessTokenShouldRefresh() bool {
+	exp, err := ctx.getExpFromAccessToken()
+	if err != nil {
+		return true
+	}
+	sixHour := int64((6 * time.Hour).Seconds())
+	return (time.Now().Unix() + sixHour) >= exp
+}
+
+func (ctx *Session) CheckAccessToken() error {
+	exp, err := ctx.getExpFromAccessToken()
+	if err != nil {
+		return err
+	}
+	isInvalid := time.Now().Unix() >= exp
+	if isInvalid {
+		if ctx.Username != "" && ctx.Password != "" {
+			return ErrorAccessTokenGet
+		}
+		return ErrorAccessTokenExpires
+	}
+	return nil
+}
+
+func (ctx *Session) clearanceShouldRefresh() bool {
 	now := time.Now().Unix()
 	val := now - ctx.clearanceCreated
 	t := cfExpire - (30 * time.Minute)
-	return val > int64(t.Seconds())
+	return val >= int64(t.Seconds())
+}
+
+func (ctx *Session) CheckClearance() error {
+	now := time.Now().Unix()
+	val := now - ctx.clearanceCreated
+	if val >= int64(cfExpire.Seconds()) {
+		return ErrorClearanceExpires
+	}
+	return nil
 }
 
 func (ctx *Session) waitResolveReCaptcha(timeout time.Duration) chromedp.EmulateAction {
@@ -213,7 +257,7 @@ func (ctx *Session) RefreshClearance() error {
 func (ctx *Session) AutoRefresh() *Session {
 	go func() {
 		for {
-			if ctx.AccessTokenIsInvalid() && ctx.Username != "" && ctx.Password != "" {
+			if ctx.accessTokenShouldRefresh() && ctx.Username != "" && ctx.Password != "" {
 				log.Println("start refresh token")
 				if err := ctx.RefreshToken(); err != nil {
 					log.Println("refresh token failed: " + err.Error())
@@ -221,7 +265,7 @@ func (ctx *Session) AutoRefresh() *Session {
 					log.Println("refresh token success")
 				}
 			} else {
-				if ctx.ClearanceIsInValid() {
+				if ctx.clearanceShouldRefresh() {
 					_ = ctx.RefreshClearance()
 				}
 			}
