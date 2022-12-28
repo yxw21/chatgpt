@@ -3,7 +3,7 @@ The third-party library only supports linux, so this project only supports linux
 
 # Dependency
 
-### Xvfb
+### Xvfb (Required)
 
 On Ubuntu or Debian
 ```
@@ -20,13 +20,16 @@ On Alpine
 apk update
 apk add xvfb
 ```
-### Key
+### Key (Optional)
+
+If you provide a username and password instead of an AccessToken, you must provide a Key
+
 You need a key to crack the verification code, you can go to the website `nopecha.com` to register, it is very cheap.
 
 ```
 https://nopecha.com
 ```
-### Chrome
+### Chrome (Required)
 
 On Ubuntu or Debian
 ```
