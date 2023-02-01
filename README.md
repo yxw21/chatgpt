@@ -20,15 +20,6 @@ On Alpine
 apk update
 apk add xvfb
 ```
-### Key (Optional)
-
-If you provide a username and password instead of an AccessToken, you must provide a Key
-
-You need a key to crack the verification code, you can go to the website `nopecha.com` to register, it is very cheap.
-
-```
-https://nopecha.com
-```
 ### Chrome (Required)
 
 On Ubuntu or Debian
@@ -59,7 +50,6 @@ import (
 
 func main() {
 	browser, closeBrowser, err := chatgpt.NewBrowser(chatgpt.BrowserOptions{
-		ExtensionKey: "I-ABCDEFGHIJKL",
 		//Proxy:        "socks5://38.91.107.224:36699",
 	})
 	if err != nil {
