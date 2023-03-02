@@ -1,3 +1,9 @@
+
+chatgpt api has been released, it is recommended to use the official api
+
+https://platform.openai.com/docs/api-reference/chat
+
+<del>
 # Tips
 The third-party library only supports linux, so this project only supports linux.
 
@@ -74,3 +80,4 @@ func main() {
 # Access token (Seems to expire in 7 days)
 
 https://chat.openai.com/api/auth/session
+</del>
